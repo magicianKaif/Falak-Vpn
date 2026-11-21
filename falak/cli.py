@@ -19,6 +19,8 @@ import sys
 from typing import Sequence
 
 from falak import __version__
+from falak.config.loader import ConfigError, load_config
+from falak.core.environment import detect_environment
 from falak.utils.logger import get_logger
 
 logger = get_logger("falak.cli")
@@ -45,6 +47,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Show the Falak version and exit.",
     )
 
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Parse and validate a WireGuard .conf file (read-only).",
+    )
+    config_parser.add_argument(
+        "path",
+        help="Path to the WireGuard configuration file to validate.",
+    )
+
+    subparsers.add_parser(
+        "status",
+        help=(
+            "Show a read-only environment report (tools, NetworkManager, "
+            "DNS method, default routes). Makes no changes."
+        ),
+    )
+
     return parser
 
 
@@ -54,8 +73,41 @@ def _handle_version(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_config(args: argparse.Namespace) -> int:
+    """Handle `falak config <path>`.
+
+    Read-only: parses and validates the given WireGuard .conf file and
+    prints a redacted summary. Never establishes a connection, never
+    modifies the file, and never prints PrivateKey/PresharedKey values.
+    """
+    try:
+        config = load_config(args.path)
+    except ConfigError as exc:
+        logger.error("Configuration invalid: %s", exc)
+        print(f"Invalid configuration: {exc}", file=sys.stderr)
+        return 1
+
+    print(config.describe())
+    return 0
+
+
+def _handle_status(_args: argparse.Namespace) -> int:
+    """Handle `falak status`.
+
+    Read-only: probes tool availability, NetworkManager, DNS method,
+    and default routes, then prints a summary. Never modifies
+    networking, DNS, routes, or firewall state, and never touches
+    WireGuard config or key material.
+    """
+    report = detect_environment()
+    print(report.describe())
+    return 0
+
+
 _COMMAND_HANDLERS = {
     "version": _handle_version,
+    "config": _handle_config,
+    "status": _handle_status,
 }
 
 
